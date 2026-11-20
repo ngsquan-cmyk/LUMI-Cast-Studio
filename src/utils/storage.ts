@@ -1,6 +1,7 @@
 import { CourseProject, InteractionItem, InteractionType, LearnerAnswer, SubtitleCue } from '../types/course';
 
 const COURSES_STORAGE_KEY = 'lumacast_courses_v1';
+const CLEAN_PROD_FLAG = 'lumacast_clean_prod_v1';
 const DB_NAME = 'lumacast_media_db';
 const STORE_NAME = 'videos';
 const DEMO_COURSE_IDS = new Set(['course-loto-safety', 'course-phishing-awareness']);
@@ -226,41 +227,22 @@ export function evaluateInteractionAnswer(
   };
 }
 
-export function loadStoredCourses(fallback: CourseProject[]): CourseProject[] {
+export function loadStoredCourses(fallback: CourseProject[] = []): CourseProject[] {
   try {
     const raw = localStorage.getItem(COURSES_STORAGE_KEY);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as CourseProject[];
     if (!Array.isArray(parsed)) return fallback;
-    const fallbackMap = new Map(fallback.map((c) => [c.id, c]));
-    return parsed.map((c) => {
-      const fb = fallbackMap.get(c.id);
-      if (!fb) return c;
-      let nextCourse = c;
-      if (c.subtitles === undefined && fb.subtitles) {
-        nextCourse = {
-          ...nextCourse,
-          subtitles: fb.subtitles,
-          subtitleFileName: fb.subtitleFileName,
-          subtitlesEnabledByDefault: fb.subtitlesEnabledByDefault ?? true,
-        };
-      }
-      // Upgrade untouched demo checkpoint sec-int-4 to drag_text so learners get the word-drag bank
-      if (c.id === 'course-phishing-awareness') {
-        const fbSec4 = fb.interactions.find((i) => i.id === 'sec-int-4');
-        if (fbSec4) {
-          nextCourse = {
-            ...nextCourse,
-            interactions: nextCourse.interactions.map((i) =>
-              i.id === 'sec-int-4' && i.type === InteractionType.FILL_BLANK && !i.distractorWords
-                ? fbSec4
-                : i
-            ),
-          };
-        }
-      }
-      return nextCourse;
-    });
+
+    const alreadyCleaned = localStorage.getItem(CLEAN_PROD_FLAG) === '1';
+    if (!alreadyCleaned) {
+      const cleaned = parsed.filter((c) => !isDemoCourseId(c.id));
+      localStorage.setItem(CLEAN_PROD_FLAG, '1');
+      localStorage.setItem(COURSES_STORAGE_KEY, JSON.stringify(cleaned));
+      return cleaned;
+    }
+
+    return parsed;
   } catch {
     return fallback;
   }

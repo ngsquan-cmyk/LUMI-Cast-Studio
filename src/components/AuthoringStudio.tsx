@@ -73,7 +73,15 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
   const [selectedId, setSelectedId] = useState<string | null>(
     course.interactions[0]?.id || null
   );
-  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('interaction');
+  const hasConfiguredVideo =
+    (course.videoSourceType === 'upload' && Boolean(course.uploadedVideoKey)) ||
+    (course.videoSourceType === 'youtube' && Boolean(course.youtubeId)) ||
+    (course.videoSourceType === 'url' && Boolean(course.videoUrl)) ||
+    (course.videoSourceType === 'builtin' && Boolean(course.builtInScenes?.length));
+
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>(() =>
+    hasConfiguredVideo ? 'interaction' : 'video'
+  );
   const [videoUrlInput, setVideoUrlInput] = useState(course.videoUrl || '');
   const [urlFeedback, setUrlFeedback] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
@@ -257,30 +265,18 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
         type === InteractionType.INFO
           ? 'Ghi chú'
           : `Câu hỏi ${course.interactions.length + 1}`,
-      prompt:
-        type === InteractionType.INFO
-          ? 'Ghi chú quan trọng cho học viên'
-          : type === InteractionType.HOTSPOT
-          ? 'Nhấp vào khu vực mục tiêu trên video.'
-          : type === InteractionType.FILL_BLANK
-          ? 'Điền từ còn thiếu vào các chỗ trống bên dưới:'
-          : type === InteractionType.DRAG_TEXT
-          ? 'Kéo hoặc bấm chọn từ thích hợp bên dưới để điền vào chỗ trống:'
-          : type === InteractionType.ORDERING
-          ? 'Sắp xếp các bước sau theo đúng trình tự:'
-          : 'Nhập câu hỏi kiểm tra kiến thức tại thời điểm này:',
+      prompt: '',
       displayMode: type === InteractionType.INFO ? 'button' : 'poster',
       pauseVideo: true,
       points: type === InteractionType.INFO ? 0 : 20,
       position: { x: 50, y: 50 },
-      explanation: 'Giải thích đáp án đúng cho học viên sau khi kiểm tra.',
+      explanation: '',
     };
 
     if (type === InteractionType.MULTIPLE_CHOICE || type === InteractionType.MULTI_SELECT) {
       base.options = [
-        { id: `${id}-a`, text: 'Phương án A (Đáp án đúng)', isCorrect: true },
-        { id: `${id}-b`, text: 'Phương án B', isCorrect: false },
-        { id: `${id}-c`, text: 'Phương án C', isCorrect: false },
+        { id: `${id}-a`, text: '', isCorrect: true },
+        { id: `${id}-b`, text: '', isCorrect: false },
       ];
     } else if (type === InteractionType.TRUE_FALSE) {
       base.options = [
@@ -288,22 +284,18 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
         { id: `${id}-f`, text: 'Sai', isCorrect: false },
       ];
     } else if (type === InteractionType.FILL_BLANK) {
-      base.blankSentence = 'Quy trình an toàn yêu cầu ngắt *nguồn điện* trước khi *bảo trì* thiết bị.';
+      base.blankSentence = '';
       base.caseSensitive = false;
     } else if (type === InteractionType.DRAG_TEXT) {
-      base.blankSentence = 'Quy trình an toàn yêu cầu ngắt *nguồn điện* trước khi *bảo trì* thiết bị.';
-      base.distractorWords = ['tăng tốc', 'khởi động', 'bỏ qua'];
+      base.blankSentence = '';
+      base.distractorWords = [];
       base.caseSensitive = false;
     } else if (type === InteractionType.HOTSPOT) {
       base.hotspot = { x: 35, y: 30, width: 24, height: 26 };
     } else if (type === InteractionType.ORDERING) {
-      base.orderingItems = [
-        'Bước 1: Chuẩn bị và kiểm tra khu vực',
-        'Bước 2: Thực hiện thao tác chính',
-        'Bước 3: Nghiệm thu và bàn giao',
-      ];
+      base.orderingItems = ['', ''];
     } else if (type === InteractionType.INFO) {
-      base.infoBody = 'Nhập nội dung tóm tắt, ghi chú hoặc lưu ý chuyên môn tại đây.';
+      base.infoBody = '';
     }
 
     commitCourseEdit({
@@ -580,7 +572,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
       id: `sub-${Date.now()}`,
       startTime: start,
       endTime: end > start ? end : Number((start + 2).toFixed(1)),
-      text: 'Nhập nội dung phụ đề tại đây...',
+      text: '',
     };
     const nextSubs = [...(course.subtitles || []), newCue].sort(
       (a, b) => a.startTime - b.startTime
@@ -1061,6 +1053,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
                   </label>
                   <textarea
                     rows={2}
+                    placeholder="Nhập câu hỏi hoặc hướng dẫn cho học viên..."
                     value={selectedItem.prompt}
                     onChange={(e) => updateSelectedItem({ prompt: e.target.value })}
                     className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs text-slate-900"
@@ -1074,6 +1067,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
                     </label>
                     <textarea
                       rows={3}
+                      placeholder="Nhập nội dung tóm tắt, ghi chú hoặc lưu ý chuyên môn..."
                       value={selectedItem.infoBody || ''}
                       onChange={(e) => updateSelectedItem({ infoBody: e.target.value })}
                       className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs text-slate-900"
@@ -1097,7 +1091,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
                               ...(selectedItem.options || []),
                               {
                                 id: `opt-${Date.now()}`,
-                                text: `Phương án ${(selectedItem.options?.length || 0) + 1}`,
+                                text: '',
                                 isCorrect: false,
                               },
                             ];
@@ -1128,6 +1122,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
                         />
                         <input
                           type="text"
+                          placeholder={`Nhập phương án ${idx + 1}...`}
                           value={opt.text}
                           onChange={(e) => {
                             const updated = (selectedItem.options || []).map((o) =>
@@ -1203,6 +1198,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
                       </label>
                       <textarea
                         rows={3}
+                        placeholder="Ví dụ: Quy trình gồm *từ khóa 1* và *từ khóa 2*"
                         value={selectedItem.blankSentence || ''}
                         onChange={(e) => updateSelectedItem({ blankSentence: e.target.value })}
                         className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-mono text-slate-900"
@@ -1299,10 +1295,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
                         type="button"
                         onClick={() =>
                           updateSelectedItem({
-                            orderingItems: [
-                              ...(selectedItem.orderingItems || []),
-                              `Bước ${(selectedItem.orderingItems?.length || 0) + 1}`,
-                            ],
+                            orderingItems: [...(selectedItem.orderingItems || []), ''],
                           })
                         }
                         className="text-xs font-semibold text-sky-700 hover:underline cursor-pointer"
@@ -1315,6 +1308,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
                         <span className="font-mono text-xs text-slate-500 w-4">{idx + 1}.</span>
                         <input
                           type="text"
+                          placeholder={`Nhập bước ${idx + 1}...`}
                           value={step}
                           onChange={(e) => {
                             const next = [...(selectedItem.orderingItems || [])];
@@ -1394,6 +1388,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
                   </label>
                   <textarea
                     rows={2}
+                    placeholder="Nhập giải thích hiển thị sau khi học viên trả lời (tùy chọn)..."
                     value={selectedItem.explanation}
                     onChange={(e) => updateSelectedItem({ explanation: e.target.value })}
                     className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs text-slate-900"
@@ -1522,32 +1517,13 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
               )}
             </div>
 
-            {course.builtInScenes && course.builtInScenes.length > 0 && (
-              <div className="pt-4 border-t border-slate-200 space-y-2">
-                <div className="text-xs font-semibold text-slate-800">3. Quay lại bài giảng tích hợp sẵn</div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    commitCourseEdit({
-                      ...course,
-                      videoSourceType: 'builtin',
-                      duration: 60,
-                    })
-                  }
-                  className="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 cursor-pointer"
-                >
-                  Sử dụng video bài giảng mẫu tích hợp
-                </button>
-              </div>
-            )}
-
             {(course.interactions.length > 0 || (course.subtitles?.length || 0) > 0 || isDemoCourseId(course.id)) && (
               <div className="pt-4 border-t border-slate-200 space-y-2">
                 <div className="text-xs font-semibold text-slate-800">
                   Dọn sạch câu hỏi &amp; phụ đề nháp của bài này
                 </div>
                 <p className="text-xs text-slate-500">
-                  Nếu bạn vừa thay video mới vào bài mẫu cũ, hãy nhấn nút dưới để xóa hết câu hỏi và phụ đề mẫu cũ tránh chồng chéo lên video thật.
+                  Nhấn nút dưới để xóa toàn bộ câu hỏi và phụ đề hiện tại của khóa học này trước khi biên tập lại.
                 </p>
                 <button
                   type="button"
@@ -1737,6 +1713,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
                       </div>
                       <input
                         type="text"
+                        placeholder="Nhập nội dung phụ đề..."
                         value={cue.text}
                         onChange={(e) =>
                           handleUpdateSubtitleCue(cue.id, { text: e.target.value })

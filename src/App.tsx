@@ -4,20 +4,15 @@ import { CourseLibraryView } from './components/CourseLibraryView';
 import { InteractiveVideoPlayer } from './components/InteractiveVideoPlayer';
 import { LmsSimulatorPanel } from './components/LmsSimulatorPanel';
 import { ScormExportModal } from './components/ScormExportModal';
-import { DEMO_COURSES } from './data/demoCourses';
 import { CourseProject } from './types/course';
-import { deleteVideoBlob, isDemoCourseId, loadStoredCourses, saveStoredCourses } from './utils/storage';
+import { deleteVideoBlob, loadStoredCourses, saveStoredCourses } from './utils/storage';
 
 type AppView = 'library' | 'play' | 'author' | 'lms';
 
 export default function App() {
-  const [courses, setCourses] = useState<CourseProject[]>(() =>
-    loadStoredCourses(DEMO_COURSES)
-  );
-  const [activeCourseId, setActiveCourseId] = useState<string>(
-    () => loadStoredCourses(DEMO_COURSES)[0]?.id || ''
-  );
-  const [view, setView] = useState<AppView>('play');
+  const [courses, setCourses] = useState<CourseProject[]>(() => loadStoredCourses());
+  const [activeCourseId, setActiveCourseId] = useState<string>(() => courses[0]?.id || '');
+  const [view, setView] = useState<AppView>(() => (courses.length > 0 ? 'play' : 'library'));
   const [isExportOpen, setIsExportOpen] = useState(false);
 
   useEffect(() => {
@@ -49,31 +44,6 @@ export default function App() {
     if (activeCourseId === id) {
       setActiveCourseId(next[0]?.id || '');
     }
-  };
-
-  const handleClearDemoCourses = () => {
-    courses.forEach((c) => {
-      if (isDemoCourseId(c.id) && c.uploadedVideoKey) {
-        deleteVideoBlob(c.uploadedVideoKey);
-      }
-    });
-    const next = courses.filter((c) => !isDemoCourseId(c.id));
-    setCourses(next);
-    if (isDemoCourseId(activeCourseId)) {
-      setActiveCourseId(next[0]?.id || '');
-    }
-  };
-
-  const handleRestoreDemoCourses = () => {
-    setCourses((prev) => {
-      const existingIds = new Set(prev.map((c) => c.id));
-      const missing = DEMO_COURSES.filter((c) => !existingIds.has(c.id));
-      const next = [...prev, ...missing];
-      if (!activeCourseId && next[0]) {
-        setActiveCourseId(next[0].id);
-      }
-      return next;
-    });
   };
 
   return (
@@ -190,8 +160,6 @@ export default function App() {
             }}
             onCreateCourse={handleCreateCourse}
             onDeleteCourse={handleDeleteCourse}
-            onClearDemoCourses={handleClearDemoCourses}
-            onRestoreDemoCourses={handleRestoreDemoCourses}
           />
         )}
 
@@ -201,7 +169,7 @@ export default function App() {
               Chưa có khóa học nào trong thư viện
             </h2>
             <p className="text-sm text-slate-600">
-              Các bản nháp và bài mẫu đã được xóa sạch. Bạn có thể tạo khóa học video thật mới ngay trong Thư viện khóa học.
+              Hãy vào Thư viện khóa học để tạo khóa học video đầu tiên của bạn và bắt đầu biên tập câu hỏi tương tác.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
               <button
@@ -210,13 +178,6 @@ export default function App() {
                 className="px-4 py-2.5 rounded-lg bg-sky-600 text-white text-xs font-semibold hover:bg-sky-700 cursor-pointer"
               >
                 Về thư viện để tạo khóa mới
-              </button>
-              <button
-                type="button"
-                onClick={handleRestoreDemoCourses}
-                className="px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
-              >
-                Khôi phục 2 bài mẫu
               </button>
             </div>
           </div>

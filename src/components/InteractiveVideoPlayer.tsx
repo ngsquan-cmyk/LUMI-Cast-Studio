@@ -377,7 +377,7 @@ export const InteractiveVideoPlayer: React.FC<InteractiveVideoPlayerProps> = ({
           <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-6 text-center">
             <p className="text-sm font-medium text-slate-200">Chưa có tệp video hợp lệ cho khóa học này.</p>
             <p className="text-xs text-slate-400 mt-1">
-              Chuyển sang tab Trình biên tập để tải video MP4/WebM hoặc dùng bài giảng mẫu tích hợp.
+              Chuyển sang tab Trình biên tập để tải video MP4/WebM hoặc dán link YouTube / MP4.
             </p>
           </div>
         )}

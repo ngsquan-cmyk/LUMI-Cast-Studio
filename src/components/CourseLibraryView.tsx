@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Download, Edit3, FolderInput, Play, Plus, Trash2, Upload } from 'lucide-react';
-import { CourseProject, InteractionType } from '../types/course';
-import { extractYouTubeId, formatTime, isDemoCourseId, saveVideoBlob } from '../utils/storage';
+import { CourseProject } from '../types/course';
+import { extractYouTubeId, formatTime, saveVideoBlob } from '../utils/storage';
 
 interface CourseLibraryViewProps {
   courses: CourseProject[];
@@ -11,8 +11,6 @@ interface CourseLibraryViewProps {
   onSelectAndExport: (id: string) => void;
   onCreateCourse: (course: CourseProject) => void;
   onDeleteCourse: (id: string) => void;
-  onClearDemoCourses: () => void;
-  onRestoreDemoCourses: () => void;
 }
 
 export const CourseLibraryView: React.FC<CourseLibraryViewProps> = ({
@@ -23,8 +21,6 @@ export const CourseLibraryView: React.FC<CourseLibraryViewProps> = ({
   onSelectAndExport,
   onCreateCourse,
   onDeleteCourse,
-  onClearDemoCourses,
-  onRestoreDemoCourses,
 }) => {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -32,11 +28,7 @@ export const CourseLibraryView: React.FC<CourseLibraryViewProps> = ({
   const [newDesc, setNewDesc] = useState('');
   const [newVideoUrl, setNewVideoUrl] = useState('');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [startBlank, setStartBlank] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
-  const [confirmClearDemos, setConfirmClearDemos] = useState(false);
-
-  const demoCount = courses.filter((c) => isDemoCourseId(c.id)).length;
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +36,7 @@ export const CourseLibraryView: React.FC<CourseLibraryViewProps> = ({
     setIsCreating(true);
 
     const id = `course-${Date.now()}`;
-    let videoSourceType: CourseProject['videoSourceType'] = 'builtin';
+    let videoSourceType: CourseProject['videoSourceType'] = 'url';
     let uploadedVideoKey: string | undefined;
     let uploadedVideoName: string | undefined;
     let uploadedVideoMime: string | undefined;
@@ -102,58 +94,9 @@ export const CourseLibraryView: React.FC<CourseLibraryViewProps> = ({
       preventSkipping: false,
       defaultScormVersion: '1.2',
       updatedAt: new Date().toISOString().slice(0, 10),
-      builtInScenes:
-        videoSourceType === 'builtin'
-          ? [
-              {
-                startTime: 0,
-                endTime: 30,
-                title: newTitle.trim(),
-                subtitle: 'Phần mở đầu & Nội dung trọng tâm',
-                bulletPoints: [
-                  'Giới thiệu mục tiêu bài giảng và tiêu chuẩn đánh giá.',
-                  'Người học theo dõi video và trả lời câu hỏi tại các mốc thời gian.',
-                ],
-                imageUrl: '/src/assets/images/studio_training_cover_1795148197254.jpg',
-                accentColor: '#0284c7',
-              },
-              {
-                startTime: 30,
-                endTime: 60,
-                title: 'Tổng hợp & Thực hành tình huống',
-                subtitle: 'Áp dụng kiến thức vào quy trình thực tế',
-                bulletPoints: [
-                  'Hoàn thành toàn bộ điểm tương tác để ghi nhận điểm số SCORM.',
-                  'Xem lại bảng tổng kết kết quả ở cuối bài học.',
-                ],
-                imageUrl: '/src/assets/images/studio_training_cover_1795148197254.jpg',
-                accentColor: '#059669',
-              },
-            ]
-          : undefined,
       subtitles: [],
       subtitlesEnabledByDefault: false,
-      interactions: startBlank
-        ? []
-        : [
-            {
-              id: `${id}-q1`,
-              type: InteractionType.MULTIPLE_CHOICE,
-              timestamp: Math.min(10, Math.max(3, Math.floor(duration * 0.25))),
-              duration: 6,
-              title: 'Câu hỏi kiểm tra đầu giờ',
-              prompt: 'Mục tiêu chính của bài đào tạo này là gì?',
-              displayMode: 'poster',
-              pauseVideo: true,
-              points: 50,
-              position: { x: 50, y: 50 },
-              options: [
-                { id: 'o1', text: 'Nắm vững quy trình và áp dụng đúng tiêu chuẩn', isCorrect: true },
-                { id: 'o2', text: 'Chỉ xem lướt qua không cần thực hành', isCorrect: false },
-              ],
-              explanation: 'Hoàn thành chính xác các câu hỏi giúp củng cố kiến thức thực tế.',
-            },
-          ],
+      interactions: [],
     };
 
     onCreateCourse(newCourse);
@@ -318,7 +261,7 @@ export const CourseLibraryView: React.FC<CourseLibraryViewProps> = ({
               </label>
               <input
                 type="url"
-                placeholder="Để trống để dùng video bài giảng mẫu"
+                placeholder="https://www.youtube.com/watch?v=... hoặc link .mp4 (có thể thêm sau)"
                 value={newVideoUrl}
                 onChange={(e) => setNewVideoUrl(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-900"
@@ -326,16 +269,7 @@ export const CourseLibraryView: React.FC<CourseLibraryViewProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-            <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={startBlank}
-                onChange={(e) => setStartBlank(e.target.checked)}
-                className="rounded border-slate-300 text-sky-600"
-              />
-              <span>Khởi tạo bài trắng (không tạo sẵn câu hỏi &amp; phụ đề mẫu)</span>
-            </label>
+          <div className="flex justify-end gap-3 pt-2">
             <button
               type="submit"
               disabled={isCreating}
@@ -353,60 +287,16 @@ export const CourseLibraryView: React.FC<CourseLibraryViewProps> = ({
           <h2 className="text-lg font-bold text-slate-900">
             Thư viện khóa học tương tác ({courses.length})
           </h2>
-
-          <div className="flex items-center gap-2">
-            {demoCount > 0 && !confirmClearDemos && (
-              <button
-                type="button"
-                onClick={() => setConfirmClearDemos(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold hover:bg-rose-100 cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Xóa {demoCount} bài mẫu</span>
-              </button>
-            )}
-            {demoCount > 0 && confirmClearDemos && (
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg border border-rose-300 bg-rose-50 text-xs">
-                <span className="text-rose-800 font-medium">Xóa toàn bộ bài mẫu?</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClearDemoCourses();
-                    setConfirmClearDemos(false);
-                  }}
-                  className="px-2 py-1 rounded bg-rose-600 text-white font-semibold hover:bg-rose-700 cursor-pointer"
-                >
-                  Xác nhận xóa
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmClearDemos(false)}
-                  className="px-2 py-1 rounded bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"
-                >
-                  Hủy
-                </button>
-              </div>
-            )}
-            {demoCount === 0 && courses.length > 0 && (
-              <button
-                type="button"
-                onClick={onRestoreDemoCourses}
-                className="text-xs font-medium text-slate-500 hover:text-slate-800 underline cursor-pointer"
-              >
-                Khôi phục bài mẫu
-              </button>
-            )}
-          </div>
         </div>
 
         {courses.length === 0 ? (
           <div className="bg-white border border-dashed border-slate-300 rounded-xl p-10 text-center space-y-4">
             <div className="space-y-1">
               <h3 className="text-base font-bold text-slate-900">
-                Thư viện đang trống (đã xóa sạch bản nháp &amp; bài mẫu)
+                Chưa có khóa học nào trong thư viện
               </h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Hãy tạo khóa học video thật đầu tiên của bạn để bắt đầu gắn câu hỏi tương tác, hoặc khôi phục lại 2 bài mẫu để tham khảo.
+                Hãy tạo khóa học video đầu tiên của bạn để tải video thật lên, gắn câu hỏi tương tác và xuất gói SCORM / HTML5.
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-3">
@@ -418,20 +308,12 @@ export const CourseLibraryView: React.FC<CourseLibraryViewProps> = ({
                 <Plus className="w-4 h-4" />
                 <span>Tạo khóa học video mới</span>
               </button>
-              <button
-                type="button"
-                onClick={onRestoreDemoCourses}
-                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
-              >
-                Khôi phục 2 bài mẫu
-              </button>
             </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {courses.map((course) => {
               const isSelected = course.id === activeCourseId;
-              const isDemo = isDemoCourseId(course.id);
               return (
                 <article
                   key={course.id}
@@ -451,12 +333,6 @@ export const CourseLibraryView: React.FC<CourseLibraryViewProps> = ({
                     <div className="p-5 space-y-2.5">
                       <div className="text-xs text-slate-500 flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-sky-700">{course.category}</span>
-                        {isDemo && (
-                          <>
-                            <span aria-hidden="true">·</span>
-                            <span className="font-medium text-amber-700">Bài mẫu</span>
-                          </>
-                        )}
                         <span aria-hidden="true">·</span>
                         <span className="font-mono tabular-nums">{formatTime(course.duration)}</span>
                         <span aria-hidden="true">·</span>
