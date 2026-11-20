@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 export interface YouTubePlayerHandle {
   play: () => void;
@@ -26,6 +26,7 @@ interface YTPlayerInstance {
   getCurrentTime: () => number;
   getDuration: () => number;
   getPlayerState: () => number;
+  getIframe?: () => HTMLIFrameElement;
   destroy: () => void;
 }
 
@@ -35,11 +36,15 @@ declare global {
       Player: new (
         el: HTMLElement | string,
         opts: {
+          width?: string | number;
+          height?: string | number;
+          host?: string;
           videoId: string;
           playerVars?: Record<string, string | number>;
           events?: {
             onReady?: (e: { target: YTPlayerInstance }) => void;
             onStateChange?: (e: { data: number; target: YTPlayerInstance }) => void;
+            onError?: (e: { data: number; target: YTPlayerInstance }) => void;
           };
         }
       ) => YTPlayerInstance;
@@ -75,11 +80,22 @@ function ensureYouTubeApi(): Promise<void> {
   return ytApiPromise;
 }
 
+function getYouTubeErrorMessage(code: number): string {
+  if (code === 153) {
+    return 'Trình duyệt hoặc môi trường hiện tại đang chặn gửi thông tin nguồn (Referer) tới YouTube (Lỗi 153). Hãy mở qua địa chỉ HTTPS hoặc tải video .mp4 trực tiếp lên khóa học.';
+  }
+  if (code === 101 || code === 150) {
+    return 'Chủ sở hữu video YouTube này đã tắt quyền nhúng trên trang web khác (Lỗi 101/150). Vui lòng chọn video khác hoặc tải tệp .mp4 lên.';
+  }
+  return `Không thể phát video YouTube này (Mã lỗi ${code}). Vui lòng kiểm tra lại link hoặc chuyển sang tải tệp .mp4.`;
+}
+
 export const YouTubePlayerEmbed = forwardRef<YouTubePlayerHandle, YouTubePlayerEmbedProps>(
   ({ videoId, onReady, onTimeUpdate, onPlayStateChange, onEnded }, ref) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const playerRef = useRef<YTPlayerInstance | null>(null);
     const pollRef = useRef<number | null>(null);
+    const [ytError, setYtError] = useState<string | null>(null);
 
     const callbacksRef = useRef({ onReady, onTimeUpdate, onPlayStateChange, onEnded });
     callbacksRef.current = { onReady, onTimeUpdate, onPlayStateChange, onEnded };
@@ -97,24 +113,47 @@ export const YouTubePlayerEmbed = forwardRef<YouTubePlayerHandle, YouTubePlayerE
 
     useEffect(() => {
       let destroyed = false;
+      setYtError(null);
+
+      if (window.location.protocol === 'file:') {
+        setYtError(getYouTubeErrorMessage(153));
+        return;
+      }
+
       ensureYouTubeApi().then(() => {
         if (destroyed || !mountRef.current || !window.YT?.Player) return;
         const container = document.createElement('div');
         mountRef.current.innerHTML = '';
         mountRef.current.appendChild(container);
 
-        playerRef.current = new window.YT.Player(container, {
+        const isHttpOrigin =
+          window.location.protocol === 'http:' || window.location.protocol === 'https:';
+        const playerVars: Record<string, string | number> = {
+          controls: 0,
+          rel: 0,
+          modestbranding: 1,
+          playsinline: 1,
+          disablekb: 1,
+          enablejsapi: 1,
+        };
+        if (isHttpOrigin) {
+          playerVars.origin = window.location.origin;
+          playerVars.widget_referrer = window.location.href;
+        }
+
+        const player = new window.YT.Player(container, {
+          width: '100%',
+          height: '100%',
+          host: 'https://www.youtube.com',
           videoId,
-          playerVars: {
-            controls: 0,
-            rel: 0,
-            modestbranding: 1,
-            playsinline: 1,
-            disablekb: 1,
-          },
+          playerVars,
           events: {
             onReady: (e) => {
               if (destroyed) return;
+              const iframe = e.target.getIframe?.();
+              if (iframe) {
+                iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+              }
               const dur = e.target.getDuration();
               if (dur && Number.isFinite(dur)) {
                 callbacksRef.current.onReady?.(dur);
@@ -124,6 +163,7 @@ export const YouTubePlayerEmbed = forwardRef<YouTubePlayerHandle, YouTubePlayerE
               if (destroyed) return;
               // 1 = PLAYING, 2 = PAUSED, 0 = ENDED
               if (e.data === 1) {
+                setYtError(null);
                 callbacksRef.current.onPlayStateChange?.(true);
                 const dur = e.target.getDuration();
                 if (dur && Number.isFinite(dur)) callbacksRef.current.onReady?.(dur);
@@ -134,8 +174,23 @@ export const YouTubePlayerEmbed = forwardRef<YouTubePlayerHandle, YouTubePlayerE
                 callbacksRef.current.onEnded?.();
               }
             },
+            onError: (e) => {
+              if (destroyed) return;
+              callbacksRef.current.onPlayStateChange?.(false);
+              setYtError(getYouTubeErrorMessage(e.data));
+            },
           },
         });
+        playerRef.current = player;
+
+        try {
+          const iframe = player.getIframe?.();
+          if (iframe) {
+            iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+          }
+        } catch {
+          // ignore
+        }
 
         pollRef.current = window.setInterval(() => {
           if (playerRef.current && playerRef.current.getPlayerState?.() === 1) {
@@ -163,7 +218,22 @@ export const YouTubePlayerEmbed = forwardRef<YouTubePlayerHandle, YouTubePlayerE
       <div className="relative w-full h-full bg-black">
         <div ref={mountRef} className="w-full h-full [&>iframe]:w-full [&>iframe]:h-full" />
         {/* Transparent overlay prevents direct YouTube iframe clicks from bypassing custom controls */}
-        <div className="absolute inset-0 z-10 pointer-events-auto" />
+        {!ytError && <div className="absolute inset-0 z-10 pointer-events-auto" />}
+
+        {ytError && (
+          <div className="absolute inset-0 z-20 bg-slate-950/95 text-white flex flex-col items-center justify-center p-6 text-center space-y-3">
+            <div className="text-sm font-bold text-amber-300">Không thể phát video YouTube nhúng</div>
+            <p className="text-xs text-slate-300 max-w-md leading-relaxed">{ytError}</p>
+            <a
+              href={`https://www.youtube.com/watch?v=${videoId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3.5 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-semibold text-white transition-colors"
+            >
+              Mở video trên YouTube
+            </a>
+          </div>
+        )}
       </div>
     );
   }

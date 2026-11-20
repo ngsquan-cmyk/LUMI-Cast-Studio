@@ -338,6 +338,25 @@ export const ScormExportModal: React.FC<ScormExportModalProps> = ({
             </div>
           )}
 
+          {course.videoSourceType === 'youtube' && (
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 space-y-1.5 leading-relaxed">
+              <div className="font-bold text-amber-900">
+                Lưu ý quan trọng khi xuất bài giảng dùng video YouTube:
+              </div>
+              <ul className="list-disc pl-4 space-y-1">
+                <li>
+                  <strong>Không mở file theo dạng <code className="font-mono">file://</code> trên ổ đĩa máy tính:</strong> YouTube sẽ báo <strong>Lỗi 153</strong> nếu bạn giải nén gói SCORM hoặc bấm đúp mở trực tiếp file <code className="font-mono">.html</code> từ máy tính.
+                </li>
+                <li>
+                  <strong>Cách chạy chuẩn cho link YouTube:</strong> Tải thẳng gói <strong>SCORM (.zip)</strong> lên LMS (Moodle, Canvas...) hoặc tải file <code className="font-mono">.html</code> lên SharePoint / hosting <code className="font-mono">https://</code>.
+                </li>
+                <li>
+                  <strong>Muốn mở file HTML chạy offline 100% từ máy tính / PowerPoint:</strong> Quay lại <em>Trình biên tập → tab Video → Tải video (.mp4) từ máy</em> rồi xuất lại.
+                </li>
+              </ul>
+            </div>
+          )}
+
           {/* Export Confirmation Banner */}
           {exportResult && (
             <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 space-y-1.5">

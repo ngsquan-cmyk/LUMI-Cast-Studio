@@ -253,7 +253,10 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
       type,
       timestamp: Number(currentTime.toFixed(1)),
       duration: 6,
-      title: `Điểm tương tác mới (${getInteractionTypeLabel(type)})`,
+      title:
+        type === InteractionType.INFO
+          ? 'Ghi chú'
+          : `Câu hỏi ${course.interactions.length + 1}`,
       prompt:
         type === InteractionType.INFO
           ? 'Ghi chú quan trọng cho học viên'
@@ -755,7 +758,9 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
               title="Kéo để đổi vị trí nút hiển thị trên video"
               className="absolute z-20 px-3 py-1.5 rounded-lg bg-sky-600/95 border-2 border-white text-white text-xs font-semibold shadow-lg cursor-move whitespace-nowrap"
             >
-              {selectedItem.title}
+              {selectedItem.title && !selectedItem.title.startsWith('Điểm tương tác mới')
+                ? selectedItem.title
+                : selectedItem.prompt || getInteractionTypeLabel(selectedItem.type)}
             </div>
           )}
 
@@ -953,7 +958,10 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
                 )}
                 {sortedInteractions.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {formatTime(item.timestamp)} — {item.title} ({getInteractionTypeLabel(item.type)})
+                    {formatTime(item.timestamp)} —{' '}
+                    {item.title && !item.title.startsWith('Điểm tương tác mới')
+                      ? item.title
+                      : item.prompt || getInteractionTypeLabel(item.type)} ({getInteractionTypeLabel(item.type)})
                   </option>
                 ))}
               </select>
@@ -977,9 +985,12 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
 
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-2">
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Tiêu đề</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Nhãn ngắn (thanh thời gian)
+                    </label>
                     <input
                       type="text"
+                      placeholder="Ví dụ: Câu hỏi 1"
                       value={selectedItem.title}
                       onChange={(e) => updateSelectedItem({ title: e.target.value })}
                       className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs text-slate-900"

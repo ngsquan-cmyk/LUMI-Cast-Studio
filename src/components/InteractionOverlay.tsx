@@ -156,7 +156,11 @@ export const InteractionOverlay: React.FC<InteractionOverlayProps> = ({
         ) : (
           <HelpCircle className="w-4 h-4 shrink-0" />
         )}
-        <span className="whitespace-nowrap max-w-[180px] truncate">{interaction.title}</span>
+        <span className="whitespace-nowrap max-w-[180px] truncate">
+          {interaction.title && !interaction.title.startsWith('Điểm tương tác mới')
+            ? interaction.title
+            : interaction.prompt || getInteractionTypeLabel(interaction.type)}
+        </span>
       </button>
     );
   }
@@ -458,12 +462,11 @@ export const InteractionOverlay: React.FC<InteractionOverlayProps> = ({
 
         {/* Card Body */}
         <div className="p-4 sm:p-5 space-y-3 flex-1 min-h-0 overflow-y-auto">
-          <div>
-            <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-snug">{interaction.title}</h3>
-            {interaction.prompt && (
-              <p className="text-xs sm:text-sm text-slate-700 mt-1 leading-relaxed">{interaction.prompt}</p>
-            )}
-          </div>
+          {interaction.prompt && (
+            <p className="text-sm sm:text-base font-semibold text-slate-900 leading-snug">
+              {interaction.prompt}
+            </p>
+          )}
 
           {interaction.imageUrl && (
             <div className="rounded-lg overflow-hidden border border-slate-200 bg-slate-100 max-h-36 sm:max-h-44">

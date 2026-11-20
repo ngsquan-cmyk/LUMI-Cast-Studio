@@ -304,6 +304,7 @@ function generateStandalonePlayerHtml(
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
   <title>Interactive Video Training</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -316,6 +317,12 @@ function generateStandalonePlayerHtml(
     .stage { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #020617; border-radius: 12px; overflow: hidden; border: 1px solid #cbd5e1; }
     .stage:fullscreen { border-radius: 0; border: none; }
     video { width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
+    #ytWrap iframe { width: 100%; height: 100%; border: 0; display: block; }
+    .video-error-box { position: absolute; inset: 0; z-index: 28; background: rgba(2,6,23,0.95); color: #f8fafc; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; gap: 10px; }
+    .video-error-title { font-size: 15px; font-weight: 700; color: #fcd34d; }
+    .video-error-desc { font-size: 12.5px; color: #cbd5e1; max-width: 540px; line-height: 1.55; }
+    .video-error-link { display: inline-block; margin-top: 4px; padding: 8px 14px; border-radius: 8px; background: #0284c7; color: #fff; font-size: 12px; font-weight: 600; text-decoration: none; }
+    .video-error-link:hover { background: #0369a1; }
     .builtin-scene { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: space-between; padding: 24px 28px; color: #fff; background-size: cover; background-position: center; transition: background-image 0.3s ease; }
     .builtin-scrim { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(2,6,23,0.92) 0%, rgba(2,6,23,0.58) 55%, rgba(2,6,23,0.22) 100%); pointer-events: none; }
     .builtin-top { position: relative; z-index: 2; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #cbd5e1; }
@@ -357,7 +364,7 @@ function generateStandalonePlayerHtml(
     .card-head { flex-shrink: 0; padding: 9px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 600; color: #0369a1; }
     .card-body { flex: 1 1 auto; min-height: 0; padding: 14px 16px; overflow-y: auto; }
     .card-body h3 { font-size: 15px; font-weight: 700; margin-bottom: 5px; color: #0f172a; }
-    .card-body p.prompt { font-size: 13px; color: #334155; margin-bottom: 10px; }
+    .card-body p.prompt { font-size: 14.5px; font-weight: 600; color: #0f172a; margin-bottom: 12px; line-height: 1.45; }
     .opt { width: 100%; text-align: left; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; margin-bottom: 6px; cursor: pointer; font-size: 13px; display: block; color: #0f172a; }
     .opt.selected { border-color: #0284c7; background: #f0f9ff; }
     .opt.correct { border-color: #10b981; background: #ecfdf5; }
@@ -415,6 +422,7 @@ function generateStandalonePlayerHtml(
         <div id="ytPlayerMount" style="width:100%;height:100%"></div>
         <div style="position:absolute;inset:0;z-index:10"></div>
       </div>
+      <div id="videoErrorBox" class="video-error-box hidden"></div>
       <div id="builtinScene" class="builtin-scene hidden">
         <div class="builtin-scrim"></div>
         <div class="builtin-top">
@@ -633,43 +641,121 @@ function generateStandalonePlayerHtml(
       });
     }
 
+    var videoErrorBox = document.getElementById("videoErrorBox");
+    function showVideoError(title, desc, linkHref, linkLabel) {
+      centerPlayBtn.classList.add("hidden");
+      videoErrorBox.innerHTML = "";
+      var tEl = document.createElement("div");
+      tEl.className = "video-error-title";
+      tEl.textContent = title;
+      var dEl = document.createElement("p");
+      dEl.className = "video-error-desc";
+      dEl.textContent = desc;
+      videoErrorBox.appendChild(tEl);
+      videoErrorBox.appendChild(dEl);
+      if (linkHref) {
+        var aEl = document.createElement("a");
+        aEl.className = "video-error-link";
+        aEl.href = linkHref;
+        aEl.target = "_blank";
+        aEl.rel = "noopener noreferrer";
+        aEl.textContent = linkLabel || "Mở video trên YouTube";
+        videoErrorBox.appendChild(aEl);
+      }
+      videoErrorBox.classList.remove("hidden");
+    }
+
     var ytPlayer = null;
     if (COURSE.videoSourceType === "builtin") {
       builtinEl.classList.remove("hidden");
     } else if (COURSE.videoSourceType === "youtube" && COURSE.youtubeId) {
       document.getElementById("ytWrap").classList.remove("hidden");
       muteBtn.classList.remove("hidden");
-      window.onYouTubeIframeAPIReady = function () {
-        ytPlayer = new window.YT.Player("ytPlayerMount", {
-          videoId: COURSE.youtubeId,
-          playerVars: { controls: 0, rel: 0, modestbranding: 1, playsinline: 1, disablekb: 1 },
-          events: {
-            onReady: function (e) {
-              var d = e.target.getDuration();
-              if (d && isFinite(d)) { state.duration = d; renderPins(); renderCheckpointCards(); }
-            },
-            onStateChange: function (e) {
-              if (e.data === 1) {
-                state.playing = true; playBtn.textContent = "Tạm dừng"; centerPlayBtn.classList.add("hidden");
-                var d = e.target.getDuration(); if (d && isFinite(d)) state.duration = d;
-              } else if (e.data === 2) {
-                state.playing = false; playBtn.textContent = "Phát video";
-              } else if (e.data === 0) {
-                pauseVideo(); state.summary = true; renderOverlay(); syncProgress(true);
+      var isFileProto = window.location.protocol === "file:";
+      var isHttpProto = window.location.protocol === "http:" || window.location.protocol === "https:";
+      var ytWatchUrl = "https://www.youtube.com/watch?v=" + COURSE.youtubeId;
+      if (isFileProto) {
+        showVideoError(
+          "Không thể phát video YouTube khi mở file trực tiếp trên máy (Lỗi 153)",
+          "YouTube chặn nhúng video khi file HTML được mở theo đường dẫn file:// trên ổ đĩa. Để chạy được video: (1) Tải gói SCORM .zip lên LMS (Moodle/Canvas...) hoặc tải file HTML lên web HTTPS (SharePoint, Vercel, Netlify...); HOẶC (2) Quay lại Lumi Cast Studio chọn Video từ máy (.mp4) rồi xuất lại file HTML để chạy offline hoàn toàn.",
+          ytWatchUrl,
+          "Mở video gốc trên YouTube"
+        );
+      } else {
+        window.onYouTubeIframeAPIReady = function () {
+          var pVars = { controls: 0, rel: 0, modestbranding: 1, playsinline: 1, disablekb: 1, enablejsapi: 1 };
+          if (isHttpProto) {
+            pVars.origin = window.location.origin;
+            pVars.widget_referrer = window.location.href;
+          }
+          ytPlayer = new window.YT.Player("ytPlayerMount", {
+            width: "100%",
+            height: "100%",
+            host: "https://www.youtube.com",
+            videoId: COURSE.youtubeId,
+            playerVars: pVars,
+            events: {
+              onReady: function (e) {
+                try {
+                  var fr = e.target.getIframe && e.target.getIframe();
+                  if (fr) fr.referrerPolicy = "strict-origin-when-cross-origin";
+                } catch (err) {}
+                var d = e.target.getDuration();
+                if (d && isFinite(d)) { state.duration = d; renderPins(); renderCheckpointCards(); }
+              },
+              onStateChange: function (e) {
+                if (e.data === 1) {
+                  videoErrorBox.classList.add("hidden");
+                  state.playing = true; playBtn.textContent = "Tạm dừng"; centerPlayBtn.classList.add("hidden");
+                  var d = e.target.getDuration(); if (d && isFinite(d)) state.duration = d;
+                } else if (e.data === 2) {
+                  state.playing = false; playBtn.textContent = "Phát video";
+                } else if (e.data === 0) {
+                  pauseVideo(); state.summary = true; renderOverlay(); syncProgress(true);
+                }
+              },
+              onError: function (e) {
+                var code = e && e.data;
+                if (code === 153) {
+                  showVideoError(
+                    "YouTube chặn nhúng trong khung trình phát hiện tại (Lỗi 153)",
+                    "Hệ thống LMS hoặc trình duyệt hiện đang ẩn thông tin nguồn (Referer) khi tải khung iframe. Hãy kiểm tra cấu hình LMS cho phép gửi Referer hoặc tải tệp video .mp4 trực tiếp vào bài giảng rồi xuất lại gói SCORM.",
+                    ytWatchUrl,
+                    "Mở video gốc trên YouTube"
+                  );
+                } else if (code === 101 || code === 150) {
+                  showVideoError(
+                    "Video YouTube không cho phép nhúng ngoài (Lỗi " + code + ")",
+                    "Chủ sở hữu video này đã tắt quyền nhúng trên website/LMS khác. Vui lòng dùng video khác hoặc tải tệp .mp4 lên Lumi Cast Studio.",
+                    ytWatchUrl,
+                    "Xem trực tiếp trên YouTube"
+                  );
+                } else {
+                  showVideoError(
+                    "Không tải được video YouTube (Mã lỗi " + code + ")",
+                    "Vui lòng kiểm tra kết nối Internet hoặc thay thế bằng tệp video .mp4.",
+                    ytWatchUrl,
+                    "Mở video trên YouTube"
+                  );
+                }
               }
             }
-          }
-        });
-        setInterval(function () {
-          if (ytPlayer && ytPlayer.getPlayerState && ytPlayer.getPlayerState() === 1) {
-            state.time = ytPlayer.getCurrentTime();
-            onTick();
-          }
-        }, 120);
-      };
-      var ytTag = document.createElement("script");
-      ytTag.src = "https://www.youtube.com/iframe_api";
-      document.head.appendChild(ytTag);
+          });
+          try {
+            var initFrame = ytPlayer.getIframe && ytPlayer.getIframe();
+            if (initFrame) initFrame.referrerPolicy = "strict-origin-when-cross-origin";
+          } catch (err) {}
+          setInterval(function () {
+            if (ytPlayer && ytPlayer.getPlayerState && ytPlayer.getPlayerState() === 1) {
+              state.time = ytPlayer.getCurrentTime();
+              onTick();
+            }
+          }, 120);
+        };
+        var ytTag = document.createElement("script");
+        ytTag.src = "https://www.youtube.com/iframe_api";
+        document.head.appendChild(ytTag);
+      }
     } else {
       videoEl.classList.remove("hidden");
       muteBtn.classList.remove("hidden");
@@ -688,6 +774,14 @@ function generateStandalonePlayerHtml(
         state.summary = true;
         renderOverlay();
         syncProgress(true);
+      });
+      videoEl.addEventListener("error", function () {
+        showVideoError(
+          "Không thể mở nguồn video",
+          "Nếu bạn đang mở file từ trong tệp .zip, hãy giải nén toàn bộ thư mục trước khi mở index.html. Nếu dùng link MP4 ngoài, hãy kiểm tra lại đường dẫn hoặc quyền truy cập CORS của máy chủ chứa video.",
+          "",
+          ""
+        );
       });
     }
 
@@ -735,6 +829,12 @@ function generateStandalonePlayerHtml(
       });
     }
 
+    function getCleanLabel(it) {
+      return it.title && it.title.indexOf("Điểm tương tác mới") !== 0
+        ? it.title
+        : (it.prompt || "Câu hỏi tương tác");
+    }
+
     function renderPins() {
       trackEl.querySelectorAll(".pin").forEach(function (el) { el.remove(); });
       SORTED.forEach(function (item) {
@@ -744,7 +844,7 @@ function generateStandalonePlayerHtml(
         var ans = state.answers[item.id];
         if (ans) pin.className += ans.isCorrect ? " done" : " wrong";
         pin.style.left = Math.min(98, Math.max(2, (item.timestamp / state.duration) * 100)) + "%";
-        pin.title = fmt(item.timestamp) + " · " + item.title;
+        pin.title = fmt(item.timestamp) + " · " + getCleanLabel(item);
         pin.onclick = function (e) {
           e.stopPropagation();
           openCheckpoint(item);
@@ -765,7 +865,7 @@ function generateStandalonePlayerHtml(
         var ans = state.answers[item.id];
         var statusTxt = item.type === "info" ? "Ghi chú" : ans ? (ans.isCorrect ? "Đúng (+" + ans.earned + ")" : "Sai (0)") : "Chưa làm";
         var statusColor = item.type === "info" ? "#64748b" : ans ? (ans.isCorrect ? "#059669" : "#dc2626") : "#d97706";
-        btn.innerHTML = '<div style="min-width:0"><div style="font-weight:600;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + item.title + '</div><div style="color:#0369a1;font-family:monospace;font-size:11px">' + fmt(item.timestamp) + '</div></div><span style="font-weight:600;color:' + statusColor + ';white-space:nowrap">' + statusTxt + '</span>';
+        btn.innerHTML = '<div style="min-width:0"><div style="font-weight:600;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + getCleanLabel(item) + '</div><div style="color:#0369a1;font-family:monospace;font-size:11px">' + fmt(item.timestamp) + '</div></div><span style="font-weight:600;color:' + statusColor + ';white-space:nowrap">' + statusTxt + '</span>';
         btn.onclick = function () { openCheckpoint(item); };
         grid.appendChild(btn);
       });
@@ -1023,7 +1123,7 @@ function generateStandalonePlayerHtml(
         var listHtml = SORTED.map(function (it) {
           var a = state.answers[it.id];
           var tag = it.type === "info" ? "Ghi chú" : a ? (a.isCorrect ? "Đạt +" + a.earned : "Chưa đúng (0)") : "Chưa làm";
-          return '<button type="button" class="opt" data-jump-id="' + it.id + '" style="display:flex;justify-content:space-between"><span>' + fmt(it.timestamp) + ' · ' + it.title + '</span><strong>' + tag + '</strong></button>';
+          return '<button type="button" class="opt" data-jump-id="' + it.id + '" style="display:flex;justify-content:space-between"><span>' + fmt(it.timestamp) + ' · ' + getCleanLabel(it) + '</span><strong>' + tag + '</strong></button>';
         }).join("");
         div.innerHTML = '<div class="card"><div class="card-head"><span>TỔNG KẾT KHÓA HỌC</span><span>' + (sc.passed ? "ĐẠT CHUẨN" : "CHƯA ĐẠT") + '</span></div><div class="card-body"><h3>' + COURSE.title + '</h3><p class="prompt">Kết quả: <strong>' + sc.pct + '%</strong> (' + sc.earned + '/' + sc.max + ' điểm). Chuẩn yêu cầu: ' + COURSE.passingScore + '%.</p>' + missingHtml + listHtml + '</div><div class="card-foot"><button type="button" class="btn" id="sumRestartBtn">Học lại từ đầu</button><button type="button" class="btn btn-primary" id="closeSumBtn">Đóng</button></div></div>';
         overlayRoot.appendChild(div);
@@ -1048,7 +1148,7 @@ function generateStandalonePlayerHtml(
         pinBtn.className = "pin-btn";
         pinBtn.style.left = item.position.x + "%";
         pinBtn.style.top = item.position.y + "%";
-        pinBtn.textContent = item.title;
+        pinBtn.textContent = getCleanLabel(item);
         pinBtn.onclick = function () { pauseVideo(); state.expanded = true; renderOverlay(); };
         overlayRoot.appendChild(pinBtn);
         return;
@@ -1058,7 +1158,7 @@ function generateStandalonePlayerHtml(
         var existingHs = state.answers[item.id];
         var bar = document.createElement("div");
         bar.className = "hotspot-bar";
-        bar.innerHTML = '<div><strong>' + item.title + '</strong><div style="font-size:12px;color:#cbd5e1">' + item.prompt + '</div></div><button type="button" class="btn" id="hsClose">Bỏ qua</button>';
+        bar.innerHTML = '<div><div style="font-size:13px;font-weight:600;color:#fff">' + (item.prompt || "") + '</div></div><button type="button" class="btn" id="hsClose">Bỏ qua</button>';
         var area = document.createElement("div");
         area.className = "hotspot-area";
 
@@ -1137,7 +1237,7 @@ function generateStandalonePlayerHtml(
       card.innerHTML = '<div class="card-head"><span>' + fmt(item.timestamp) + '</span><span>' + (item.type === "info" ? "Thông tin" : item.points + " điểm") + '</span></div>';
       var body = document.createElement("div");
       body.className = "card-body";
-      body.innerHTML = '<h3>' + item.title + '</h3><p class="prompt">' + (item.prompt || "") + '</p>';
+      body.innerHTML = item.prompt ? '<p class="prompt">' + item.prompt + '</p>' : '';
       if (item.imageUrl) {
         var qImg = document.createElement("img");
         qImg.className = "q-img";
