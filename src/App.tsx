@@ -6,7 +6,7 @@ import { LmsSimulatorPanel } from './components/LmsSimulatorPanel';
 import { ScormExportModal } from './components/ScormExportModal';
 import { DEMO_COURSES } from './data/demoCourses';
 import { CourseProject } from './types/course';
-import { deleteVideoBlob, loadStoredCourses, saveStoredCourses } from './utils/storage';
+import { deleteVideoBlob, isDemoCourseId, loadStoredCourses, saveStoredCourses } from './utils/storage';
 
 type AppView = 'library' | 'play' | 'author' | 'lms';
 
@@ -15,7 +15,7 @@ export default function App() {
     loadStoredCourses(DEMO_COURSES)
   );
   const [activeCourseId, setActiveCourseId] = useState<string>(
-    () => loadStoredCourses(DEMO_COURSES)[0]?.id || DEMO_COURSES[0].id
+    () => loadStoredCourses(DEMO_COURSES)[0]?.id || ''
   );
   const [view, setView] = useState<AppView>('play');
   const [isExportOpen, setIsExportOpen] = useState(false);
@@ -46,9 +46,34 @@ export default function App() {
     }
     const next = courses.filter((c) => c.id !== id);
     setCourses(next);
-    if (activeCourseId === id && next[0]) {
-      setActiveCourseId(next[0].id);
+    if (activeCourseId === id) {
+      setActiveCourseId(next[0]?.id || '');
     }
+  };
+
+  const handleClearDemoCourses = () => {
+    courses.forEach((c) => {
+      if (isDemoCourseId(c.id) && c.uploadedVideoKey) {
+        deleteVideoBlob(c.uploadedVideoKey);
+      }
+    });
+    const next = courses.filter((c) => !isDemoCourseId(c.id));
+    setCourses(next);
+    if (isDemoCourseId(activeCourseId)) {
+      setActiveCourseId(next[0]?.id || '');
+    }
+  };
+
+  const handleRestoreDemoCourses = () => {
+    setCourses((prev) => {
+      const existingIds = new Set(prev.map((c) => c.id));
+      const missing = DEMO_COURSES.filter((c) => !existingIds.has(c.id));
+      const next = [...prev, ...missing];
+      if (!activeCourseId && next[0]) {
+        setActiveCourseId(next[0].id);
+      }
+      return next;
+    });
   };
 
   return (
@@ -62,7 +87,7 @@ export default function App() {
             onClick={() => setView('library')}
             className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 cursor-pointer"
           >
-            LumaCast Studio
+            Lumi Cast Studio
           </button>
 
           {/* Zone 2: 4 concise single-line text navigation links */}
@@ -95,8 +120,13 @@ export default function App() {
           <div className="shrink-0">
             <button
               type="button"
+              disabled={!activeCourse}
               onClick={() => setIsExportOpen(true)}
-              className="px-4 py-2 text-xs font-semibold text-white bg-sky-600 rounded-lg hover:bg-sky-700 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className={`px-4 py-2 text-xs font-semibold text-white rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                activeCourse
+                  ? 'bg-sky-600 hover:bg-sky-700 cursor-pointer'
+                  : 'bg-slate-300 cursor-not-allowed'
+              }`}
             >
               Xuất SCORM / PPTX
             </button>
@@ -145,7 +175,7 @@ export default function App() {
         {view === 'library' && (
           <CourseLibraryView
             courses={courses}
-            activeCourseId={activeCourse.id}
+            activeCourseId={activeCourse?.id || ''}
             onSelectAndPlay={(id) => {
               setActiveCourseId(id);
               setView('play');
@@ -160,7 +190,36 @@ export default function App() {
             }}
             onCreateCourse={handleCreateCourse}
             onDeleteCourse={handleDeleteCourse}
+            onClearDemoCourses={handleClearDemoCourses}
+            onRestoreDemoCourses={handleRestoreDemoCourses}
           />
+        )}
+
+        {view !== 'library' && !activeCourse && (
+          <div className="max-w-xl mx-auto my-12 bg-white border border-slate-200 rounded-xl p-8 text-center space-y-4">
+            <h2 className="text-lg font-bold text-slate-900">
+              Chưa có khóa học nào trong thư viện
+            </h2>
+            <p className="text-sm text-slate-600">
+              Các bản nháp và bài mẫu đã được xóa sạch. Bạn có thể tạo khóa học video thật mới ngay trong Thư viện khóa học.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setView('library')}
+                className="px-4 py-2.5 rounded-lg bg-sky-600 text-white text-xs font-semibold hover:bg-sky-700 cursor-pointer"
+              >
+                Về thư viện để tạo khóa mới
+              </button>
+              <button
+                type="button"
+                onClick={handleRestoreDemoCourses}
+                className="px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+              >
+                Khôi phục 2 bài mẫu
+              </button>
+            </div>
+          </div>
         )}
 
         {view === 'play' && activeCourse && (

@@ -39,6 +39,8 @@ import {
   formatTimePrecise,
   getInteractionTypeLabel,
   getVideoBlob,
+  isDemoCourseId,
+  isDemoSubtitleFile,
   parseFillBlankParts,
   parseSubtitleFile,
   saveVideoBlob,
@@ -439,6 +441,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
     probe.onloadedmetadata = () => {
       const detectedDuration = Number.isFinite(probe.duration) ? Math.round(probe.duration) : 60;
       URL.revokeObjectURL(tempUrl);
+      const hadDemoSubtitles = isDemoSubtitleFile(course.subtitleFileName);
       commitCourseEdit({
         ...course,
         videoSourceType: 'upload',
@@ -446,10 +449,21 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
         uploadedVideoName: file.name,
         uploadedVideoMime: file.type || 'video/mp4',
         duration: detectedDuration,
+        ...(hadDemoSubtitles
+          ? {
+              subtitles: [],
+              subtitleFileName: undefined,
+              subtitlesEnabledByDefault: false,
+            }
+          : {}),
         updatedAt: new Date().toISOString().slice(0, 10),
       });
       setDuration(detectedDuration);
-      setUploadStatus(`Đã tải lên: ${file.name} (${formatTime(detectedDuration)})`);
+      setUploadStatus(
+        hadDemoSubtitles
+          ? `Đã tải lên: ${file.name} (${formatTime(detectedDuration)}). Đã tự động gỡ phụ đề mẫu cũ để không chồng lên video mới.`
+          : `Đã tải lên: ${file.name} (${formatTime(detectedDuration)})`
+      );
     };
     probe.onerror = () => {
       URL.revokeObjectURL(tempUrl);
@@ -460,6 +474,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
   const handleApplyVideoUrl = () => {
     const trimmed = videoUrlInput.trim();
     if (!trimmed) return;
+    const hadDemoSubtitles = isDemoSubtitleFile(course.subtitleFileName);
     const ytId = extractYouTubeId(trimmed);
     if (ytId) {
       commitCourseEdit({
@@ -467,9 +482,20 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
         videoSourceType: 'youtube',
         videoUrl: trimmed,
         youtubeId: ytId,
+        ...(hadDemoSubtitles
+          ? {
+              subtitles: [],
+              subtitleFileName: undefined,
+              subtitlesEnabledByDefault: false,
+            }
+          : {}),
         updatedAt: new Date().toISOString().slice(0, 10),
       });
-      setUrlFeedback(`Đã nhận diện video YouTube (ID: ${ytId}).`);
+      setUrlFeedback(
+        hadDemoSubtitles
+          ? `Đã nhận diện video YouTube (ID: ${ytId}) và tự động gỡ phụ đề mẫu cũ.`
+          : `Đã nhận diện video YouTube (ID: ${ytId}).`
+      );
       return;
     }
 
@@ -483,9 +509,20 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
       videoSourceType: 'url',
       videoUrl: trimmed,
       youtubeId: undefined,
+      ...(hadDemoSubtitles
+        ? {
+            subtitles: [],
+            subtitleFileName: undefined,
+            subtitlesEnabledByDefault: false,
+          }
+        : {}),
       updatedAt: new Date().toISOString().slice(0, 10),
     });
-    setUrlFeedback('Đã áp dụng liên kết video MP4/WebM trực tiếp.');
+    setUrlFeedback(
+      hadDemoSubtitles
+        ? 'Đã áp dụng liên kết video MP4/WebM trực tiếp và tự động gỡ phụ đề mẫu cũ.'
+        : 'Đã áp dụng liên kết video MP4/WebM trực tiếp.'
+    );
   };
 
   const handleExportProjectJson = () => {
@@ -494,7 +531,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${course.id}.lumacast.json`;
+    a.download = `${course.id}.lumicast.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -1489,6 +1526,36 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
                   className="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 cursor-pointer"
                 >
                   Sử dụng video bài giảng mẫu tích hợp
+                </button>
+              </div>
+            )}
+
+            {(course.interactions.length > 0 || (course.subtitles?.length || 0) > 0 || isDemoCourseId(course.id)) && (
+              <div className="pt-4 border-t border-slate-200 space-y-2">
+                <div className="text-xs font-semibold text-slate-800">
+                  Dọn sạch câu hỏi &amp; phụ đề nháp của bài này
+                </div>
+                <p className="text-xs text-slate-500">
+                  Nếu bạn vừa thay video mới vào bài mẫu cũ, hãy nhấn nút dưới để xóa hết câu hỏi và phụ đề mẫu cũ tránh chồng chéo lên video thật.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    commitCourseEdit({
+                      ...course,
+                      interactions: [],
+                      subtitles: [],
+                      subtitleFileName: undefined,
+                      subtitlesEnabledByDefault: false,
+                      updatedAt: new Date().toISOString().slice(0, 10),
+                    });
+                    setSelectedId(null);
+                    setUploadStatus('Đã xóa sạch toàn bộ câu hỏi và phụ đề nháp của khóa học này.');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-xs font-semibold text-rose-700 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Xóa sạch câu hỏi &amp; phụ đề nháp</span>
                 </button>
               </div>
             )}

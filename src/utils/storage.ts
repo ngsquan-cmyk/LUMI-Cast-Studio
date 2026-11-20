@@ -3,6 +3,16 @@ import { CourseProject, InteractionItem, InteractionType, LearnerAnswer, Subtitl
 const COURSES_STORAGE_KEY = 'lumacast_courses_v1';
 const DB_NAME = 'lumacast_media_db';
 const STORE_NAME = 'videos';
+const DEMO_COURSE_IDS = new Set(['course-loto-safety', 'course-phishing-awareness']);
+const DEMO_SUBTITLE_FILES = new Set(['loto-safety-vi.vtt', 'phishing-awareness-vi.vtt']);
+
+export function isDemoCourseId(id: string): boolean {
+  return DEMO_COURSE_IDS.has(id);
+}
+
+export function isDemoSubtitleFile(fileName?: string): boolean {
+  return Boolean(fileName && DEMO_SUBTITLE_FILES.has(fileName));
+}
 
 function parseSrtTimeToSeconds(raw: string): number {
   const cleaned = raw.trim().replace(',', '.');
@@ -221,7 +231,7 @@ export function loadStoredCourses(fallback: CourseProject[]): CourseProject[] {
     const raw = localStorage.getItem(COURSES_STORAGE_KEY);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as CourseProject[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return fallback;
+    if (!Array.isArray(parsed)) return fallback;
     const fallbackMap = new Map(fallback.map((c) => [c.id, c]));
     return parsed.map((c) => {
       const fb = fallbackMap.get(c.id);
