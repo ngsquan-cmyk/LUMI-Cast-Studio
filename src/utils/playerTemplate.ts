@@ -199,7 +199,6 @@ export function generatePlayerHtml(courseJson: string, options: PlayerHtmlOption
     <div class="header">
       <div>
         <div class="title" id="courseTitle"></div>
-        <div class="meta" id="courseMeta"></div>
       </div>
       <div class="score-pill" id="scoreBadge">Điểm: 0%</div>
     </div>
@@ -346,7 +345,6 @@ export function generatePlayerHtml(courseJson: string, options: PlayerHtmlOption
     var toastTimer = null;
 
     $("courseTitle").textContent = COURSE.title;
-    $("courseMeta").textContent = ${JSON.stringify(options.modeLabel)} + " · Chuẩn đạt: " + COURSE.passingScore + "% · " + SORTED.length + " điểm tương tác";
     $("sceneCourseName").textContent = COURSE.title;
 
     function esc(s) {
