@@ -15,9 +15,13 @@ import {
   buildScormPackageZip,
   buildStandaloneInteractiveHtml,
   buildWebBundleZip,
+  buildXapiPackageZip,
   generateImsManifest,
+  getDefaultXapiActivityId,
   getUploadedMediaFilename,
+  PackageStandard,
 } from '../utils/scormExporter';
+import { generateTincanXml } from '../utils/lmsBridges';
 import { getVideoBlob } from '../utils/storage';
 
 interface ScormExportModalProps {
@@ -34,7 +38,7 @@ export const ScormExportModal: React.FC<ScormExportModalProps> = ({
   onClose,
 }) => {
   const [channel, setChannel] = useState<ExportChannel>('scorm');
-  const [version, setVersion] = useState<ScormVersion>(course.defaultScormVersion || '1.2');
+  const [version, setVersion] = useState<PackageStandard>(course.defaultScormVersion || '2004');
   const [isExporting, setIsExporting] = useState(false);
   const [uploadedSizeMb, setUploadedSizeMb] = useState<number>(0);
   const [exportResult, setExportResult] = useState<{
@@ -61,7 +65,10 @@ export const ScormExportModal: React.FC<ScormExportModalProps> = ({
     if (course.videoSourceType === 'upload' && course.uploadedVideoName) {
       assets.push(getUploadedMediaFilename(course.uploadedVideoName));
     }
-    return generateImsManifest(course, version, assets);
+    if (version === 'xapi') {
+      return generateTincanXml(getDefaultXapiActivityId(course), course.title, course.description || '');
+    }
+    return generateImsManifest(course, version as ScormVersion, assets);
   }, [course, version]);
 
   if (!isOpen) return null;
@@ -90,13 +97,19 @@ export const ScormExportModal: React.FC<ScormExportModalProps> = ({
     setIsExporting(true);
     setExportResult(null);
     try {
-      const { blob, filename, files } = await buildScormPackageZip(course, version);
+      const { blob, filename, files } =
+        version === 'xapi'
+          ? await buildXapiPackageZip(course)
+          : await buildScormPackageZip(course, version);
       triggerDownload(blob, filename);
       setExportResult({
         filename,
         files,
         sizeKb: Math.max(1, Math.round(blob.size / 1024)),
-        note: 'Tải trực tiếp tệp .zip này lên Moodle, Canvas hoặc hệ thống E-Learning dưới dạng gói SCORM.',
+        note:
+          version === 'xapi'
+            ? 'Tải tệp .zip này lên hệ thống eLearning dưới dạng gói xAPI / Tin Can (có tincan.xml). Hệ thống cần mở bài kèm tham số endpoint, auth, actor để ghi dữ liệu vào LRS.'
+            : 'Tải trực tiếp tệp .zip này lên hệ thống eLearning dưới dạng gói SCORM.',
       });
     } finally {
       setIsExporting(false);
@@ -179,7 +192,7 @@ export const ScormExportModal: React.FC<ScormExportModalProps> = ({
               >
                 <Package className={`w-5 h-5 shrink-0 mt-0.5 ${channel === 'scorm' ? 'text-sky-600' : 'text-slate-400'}`} />
                 <div>
-                  <div className="text-sm font-bold text-slate-900">Gói SCORM (.zip) cho LMS</div>
+                  <div className="text-sm font-bold text-slate-900">Gói SCORM / xAPI (.zip) cho eLearning</div>
                   <p className="text-xs text-slate-600 mt-1 leading-relaxed">
                     Dùng để tải lên Moodle, Canvas, TalentLMS. Tự lưu điểm và khôi phục tiến độ học viên.
                   </p>
@@ -216,17 +229,22 @@ export const ScormExportModal: React.FC<ScormExportModalProps> = ({
                 <label className="block text-xs font-semibold text-slate-700">
                   Chuẩn đóng gói E-Learning
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {[
+                    {
+                      v: '2004' as const,
+                      name: 'SCORM 2004 (khuyên dùng)',
+                      desc: 'Hoàn thành + Đạt/Không đạt tách riêng, ghi kết quả từng câu, lưu tiến độ dung lượng lớn.',
+                    },
                     {
                       v: '1.2' as const,
                       name: 'SCORM 1.2',
-                      desc: 'Tương thích rộng rãi với Moodle, Canvas, TalentLMS, iSpring và hầu hết LMS phổ thông.',
+                      desc: 'Dự phòng cho hệ thống/khóa cũ. Tiến độ được nén gọn để vừa giới hạn 4.096 ký tự.',
                     },
                     {
-                      v: '2004' as const,
-                      name: 'SCORM 2004 (4th Edition)',
-                      desc: 'Hỗ trợ tách biệt Completion & Success status, Scaled Score và Sequencing chuẩn mới.',
+                      v: 'xapi' as const,
+                      name: 'xAPI (Tin Can)',
+                      desc: 'Ghi chi tiết hành vi xem: phát, dừng, tua lại, thời gian trả lời từng câu → phân tích sâu.',
                     },
                   ].map((opt) => (
                     <button
@@ -274,11 +292,19 @@ export const ScormExportModal: React.FC<ScormExportModalProps> = ({
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-                    <span>Khôi phục tiến độ qua cmi.suspend_data</span>
+                    <span>{version === 'xapi' ? 'Lưu & khôi phục tiến độ qua xAPI State API' : 'Khôi phục tiến độ qua cmi.suspend_data (đã nén gọn)'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
                     <span>Tự lưu điểm mỗi 15s &amp; khi đóng tab (pagehide)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                    <span>{version === 'xapi' ? 'Statement "answered" cho từng câu' : 'Ghi kết quả từng câu (cmi.interactions)'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                    <span>Chữ tự co giãn, toàn màn hình kèm thanh điều khiển</span>
                   </div>
                 </div>
               </div>
@@ -293,7 +319,7 @@ export const ScormExportModal: React.FC<ScormExportModalProps> = ({
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-700 flex items-center gap-1.5">
                     <FileCode className="w-3.5 h-3.5 text-slate-500" />
-                    Xem trước imsmanifest.xml
+                    Xem trước {version === 'xapi' ? 'tincan.xml' : 'imsmanifest.xml'}
                   </span>
                   <span className="font-mono text-[11px] text-slate-500">UTF-8 · XML 1.0</span>
                 </div>
@@ -380,7 +406,7 @@ export const ScormExportModal: React.FC<ScormExportModalProps> = ({
         <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
           <span className="text-xs text-slate-500">
             {channel === 'scorm'
-              ? 'Đóng gói sẵn sàng cho mọi LMS chuẩn SCORM.'
+              ? 'Đóng gói sẵn sàng cho hệ thống eLearning chuẩn SCORM / xAPI.'
               : 'Chạy độc lập offline hoặc khi chia sẻ màn hình Zoom / MS Teams.'}
           </span>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -404,7 +430,13 @@ export const ScormExportModal: React.FC<ScormExportModalProps> = ({
                 ) : (
                   <Download className="w-4 h-4" />
                 )}
-                <span>{isExporting ? 'Đang đóng gói...' : `Tải xuống SCORM ${version} (.zip)`}</span>
+                <span>
+                  {isExporting
+                    ? 'Đang đóng gói...'
+                    : version === 'xapi'
+                    ? 'Tải xuống gói xAPI (.zip)'
+                    : `Tải xuống SCORM ${version} (.zip)`}
+                </span>
               </button>
             ) : (
               <>

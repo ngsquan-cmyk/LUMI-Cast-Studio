@@ -41,11 +41,14 @@ import {
   getVideoBlob,
   isDemoCourseId,
   isDemoSubtitleFile,
+  looksLikeYouTubeUrl,
   parseFillBlankParts,
   parseSubtitleFile,
   saveVideoBlob,
 } from '../utils/storage';
 import { BuiltInVideoCanvas } from './BuiltInVideoCanvas';
+import { StudioTimeline } from './StudioTimeline';
+import { TimeInput } from './TimeInput';
 import { YouTubePlayerEmbed, YouTubePlayerHandle } from './YouTubePlayerEmbed';
 
 interface AuthoringStudioProps {
@@ -64,7 +67,20 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const ytRef = useRef<YouTubePlayerHandle>(null);
   const stageContainerRef = useRef<HTMLDivElement>(null);
-  const timelineTrackRef = useRef<HTMLDivElement>(null);
+  const videoLayerRef = useRef<HTMLDivElement>(null);
+  const [videoRatio, setVideoRatio] = useState(16 / 9);
+  const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
+
+  // Theo dõi kích thước khung để tính đúng vùng hình video (giống hệt player khi xuất)
+  useEffect(() => {
+    const el = stageContainerRef.current;
+    if (!el) return;
+    const update = () => setStageSize({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const [objectVideoUrl, setObjectVideoUrl] = useState('');
   const [isPlaying, setIsPlaying] = useState(false);
@@ -124,6 +140,10 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
     });
   }, [onUpdateCourse]);
 
+  useEffect(() => {
+    setVideoRatio(16 / 9);
+  }, [course.id, course.videoSourceType, course.uploadedVideoKey, course.videoUrl]);
+
   // Reset history when switching courses
   useEffect(() => {
     setPast([]);
@@ -153,20 +173,60 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
     };
   }, [course.id, course.videoSourceType, course.uploadedVideoKey, course.duration]);
 
-  // Keyboard Undo / Redo (Ctrl+Z / Ctrl+Y)
+  // Phím tắt Studio: hoàn tác, phát/dừng, tua chính xác, đặt mốc tại đầu phát...
+  const shortcutRef = useRef<{
+    togglePlay: () => void;
+    seekBy: (d: number) => void;
+    setAtPlayhead: () => void;
+    nudge: (d: number) => void;
+    addQuick: () => void;
+    selectAdjacent: (dir: 1 | -1) => void;
+  } | null>(null);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+      if (
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)
+      ) {
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) handleRedo();
         else handleUndo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         handleRedo();
+        return;
+      }
+      if (e.ctrlKey || e.metaKey) return;
+      const sc = shortcutRef.current;
+      if (!sc) return;
+      if (e.code === 'Space') {
+        if (target && target.tagName === 'BUTTON') return;
+        e.preventDefault();
+        sc.togglePlay();
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        const dir = e.key === 'ArrowLeft' ? -1 : 1;
+        if (e.altKey) sc.nudge(dir * 0.1);
+        else sc.seekBy(dir * (e.shiftKey ? 0.1 : 1));
+      } else if (e.key === ',' || e.key === '.') {
+        e.preventDefault();
+        sc.seekBy((e.key === ',' ? -1 : 1) / 30);
+      } else if (e.key === 'i' || e.key === 'I') {
+        e.preventDefault();
+        sc.setAtPlayhead();
+      } else if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault();
+        sc.addQuick();
+      } else if (e.key === '[' || e.key === ']') {
+        e.preventDefault();
+        sc.selectAdjacent(e.key === '[' ? -1 : 1);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -332,7 +392,21 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
     setSelectedId(remaining[0]?.id || null);
   };
 
-  // Drag Hotspot Move / Resize or Pin Drag directly on 16:9 stage
+  const clampTime = (sec: number) => Math.max(0, Math.min(duration, Math.round(sec * 10) / 10));
+
+  const setSelectedAtPlayhead = () => {
+    if (!selectedItem) return;
+    updateSelectedItem({ timestamp: clampTime(currentTime) });
+  };
+
+  const nudgeSelected = (delta: number) => {
+    if (!selectedItem) return;
+    const t = clampTime(selectedItem.timestamp + delta);
+    updateSelectedItem({ timestamp: t });
+    seekTo(t);
+  };
+
+  // Drag Hotspot Move / Resize or Pin Drag directly on the video layer (khớp vùng hình video thật)
   const startStageDrag = (
     e: React.MouseEvent,
     mode: 'hotspot-move' | 'hotspot-resize' | 'pin-move'
@@ -341,7 +415,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
     e.preventDefault();
     if (!selectedItem || !stageContainerRef.current) return;
 
-    const stageRect = stageContainerRef.current.getBoundingClientRect();
+    const stageRect = (videoLayerRef.current || stageContainerRef.current).getBoundingClientRect();
     const startX = e.clientX;
     const startY = e.clientY;
     const initHotspot = selectedItem.hotspot ? { ...selectedItem.hotspot } : null;
@@ -374,43 +448,6 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
         const ny = Math.max(8, Math.min(92, Math.round(initPos.y + dyPct)));
         updateSelectedItem({ position: { x: nx, y: ny } }, false);
       }
-    };
-
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  };
-
-  // Drag Timeline Pin horizontally along track
-  const startTimelinePinDrag = (e: React.MouseEvent, item: InteractionItem) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setSelectedId(item.id);
-    setInspectorTab('interaction');
-    if (!timelineTrackRef.current) return;
-
-    const trackRect = timelineTrackRef.current.getBoundingClientRect();
-    setPast((prev) => [...prev.slice(-24), courseRef.current]);
-    setFuture([]);
-
-    const onMove = (ev: MouseEvent) => {
-      const pct = Math.max(0, Math.min(1, (ev.clientX - trackRect.left) / trackRect.width));
-      const nextTs = Number((pct * duration).toFixed(1));
-      commitCourseEdit(
-        {
-          ...courseRef.current,
-          interactions: courseRef.current.interactions.map((x) =>
-            x.id === item.id ? { ...x, timestamp: nextTs } : x
-          ),
-          updatedAt: new Date().toISOString().slice(0, 10),
-        },
-        false
-      );
-      seekTo(nextTs);
     };
 
     const onUp = () => {
@@ -490,6 +527,13 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
         hadDemoSubtitles
           ? `Đã nhận diện video YouTube (ID: ${ytId}) và tự động gỡ phụ đề mẫu cũ.`
           : `Đã nhận diện video YouTube (ID: ${ytId}).`
+      );
+      return;
+    }
+
+    if (looksLikeYouTubeUrl(trimmed)) {
+      setUrlFeedback(
+        'Đây là link YouTube nhưng không đọc được mã video. Hãy mở đúng video trên YouTube → bấm Chia sẻ → Sao chép link (dạng youtu.be/... hoặc youtube.com/watch?v=...). Link kênh, danh sách phát hoặc tìm kiếm không dùng được.'
       );
       return;
     }
@@ -612,7 +656,38 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
       ? course.videoUrl
       : '';
 
-  const progressPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+  // Vùng hình video thật bên trong khung 16:9 (loại bỏ viền đen) — toạ độ pin/hotspot tính theo vùng này
+  const videoRect = (() => {
+    const { w, h } = stageSize;
+    if (!w || !h) return { left: 0, top: 0, width: '100%', height: '100%' } as const;
+    let vw = w;
+    let vh = w / videoRatio;
+    if (vh > h) {
+      vh = h;
+      vw = h * videoRatio;
+    }
+    return { left: (w - vw) / 2, top: (h - vh) / 2, width: vw, height: vh };
+  })();
+
+  shortcutRef.current = {
+    togglePlay,
+    seekBy: (d: number) => seekTo(currentTime + d),
+    setAtPlayhead: setSelectedAtPlayhead,
+    nudge: nudgeSelected,
+    addQuick: () => handleAddInteraction(InteractionType.MULTIPLE_CHOICE),
+    selectAdjacent: (dir: 1 | -1) => {
+      if (!sortedInteractions.length) return;
+      const idx = sortedInteractions.findIndex((x) => x.id === selectedId);
+      const next =
+        idx < 0
+          ? sortedInteractions[dir > 0 ? 0 : sortedInteractions.length - 1]
+          : sortedInteractions[Math.max(0, Math.min(sortedInteractions.length - 1, idx + dir))];
+      setSelectedId(next.id);
+      setInspectorTab('interaction');
+      seekTo(next.timestamp);
+    },
+  };
+
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
@@ -699,6 +774,8 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
               onLoadedMetadata={(e) => {
                 const d = e.currentTarget.duration;
                 if (d && Number.isFinite(d)) setDuration(d);
+                const { videoWidth, videoHeight } = e.currentTarget;
+                if (videoWidth && videoHeight) setVideoRatio(videoWidth / videoHeight);
               }}
               onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
               onEnded={() => setIsPlaying(false)}
@@ -714,6 +791,8 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
             </div>
           )}
 
+          {/* Lớp video: trùng khít vùng hình video thật, giống player khi xuất */}
+          <div ref={videoLayerRef} className="absolute z-20 pointer-events-none" style={videoRect}>
           {/* Draggable & Resizable Hotspot Box */}
           {selectedItem && selectedItem.type === InteractionType.HOTSPOT && selectedItem.hotspot && (
             <div
@@ -724,7 +803,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
                 width: `${selectedItem.hotspot.width}%`,
                 height: `${selectedItem.hotspot.height}%`,
               }}
-              className="absolute z-20 border-2 border-emerald-400 bg-emerald-500/25 rounded-lg cursor-move flex items-start justify-start p-1 group"
+              className="absolute z-20 border-2 border-emerald-400 bg-emerald-500/25 rounded-lg cursor-move flex items-start justify-start p-1 group pointer-events-auto"
             >
               <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-semibold whitespace-nowrap pointer-events-none">
                 Kéo di chuyển ({selectedItem.hotspot.x}%, {selectedItem.hotspot.y}% · {selectedItem.hotspot.width}×{selectedItem.hotspot.height}%)
@@ -748,7 +827,7 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
                 transform: 'translate(-50%, -50%)',
               }}
               title="Kéo để đổi vị trí nút hiển thị trên video"
-              className="absolute z-20 px-3 py-1.5 rounded-lg bg-sky-600/95 border-2 border-white text-white text-xs font-semibold shadow-lg cursor-move whitespace-nowrap"
+              className="absolute z-20 px-3 py-1.5 rounded-lg bg-sky-600/95 border-2 border-white text-white text-xs font-semibold shadow-lg cursor-move whitespace-nowrap pointer-events-auto"
             >
               {selectedItem.title && !selectedItem.title.startsWith('Điểm tương tác mới')
                 ? selectedItem.title
@@ -762,97 +841,44 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
               {activeSubtitle.text}
             </div>
           )}
+          </div>
         </div>
 
         {/* Lumi-Style Timeline & Quick-Add Interaction Strip */}
         <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={togglePlay}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 cursor-pointer"
-              >
-                {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                <span>{isPlaying ? 'Dừng' : 'Phát'}</span>
-              </button>
-              <span className="font-mono text-xs tabular-nums text-slate-700 bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200">
-                {formatTimePrecise(currentTime)} / {formatTime(duration)}
-              </span>
-            </div>
-
-            {selectedItem && (
-              <div className="flex items-center gap-1.5 text-xs">
-                <span className="text-slate-500">Dịch mốc đang chọn:</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const t = Math.max(0, Number((selectedItem.timestamp - 0.5).toFixed(1)));
-                    updateSelectedItem({ timestamp: t });
-                    seekTo(t);
-                  }}
-                  className="px-2 py-1 rounded border border-slate-200 bg-slate-50 hover:bg-slate-100 font-mono text-slate-700 cursor-pointer"
-                >
-                  -0.5s
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const t = Math.min(duration, Number((selectedItem.timestamp + 0.5).toFixed(1)));
-                    updateSelectedItem({ timestamp: t });
-                    seekTo(t);
-                  }}
-                  className="px-2 py-1 rounded border border-slate-200 bg-slate-50 hover:bg-slate-100 font-mono text-slate-700 cursor-pointer"
-                >
-                  +0.5s
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Interactive Pin Track (supports dragging pins directly!) */}
-          <div className="relative pt-2 pb-1">
-            <div
-              ref={timelineTrackRef}
-              className="relative h-8 bg-slate-100 border border-slate-200 rounded-lg overflow-visible flex items-center px-1"
-            >
-              <div
-                className="absolute left-0 top-0 bottom-0 bg-sky-100/70 rounded-l-lg pointer-events-none"
-                style={{ width: `${progressPct}%` }}
-              />
-              <input
-                type="range"
-                min={0}
-                max={duration || 60}
-                step={0.1}
-                value={currentTime}
-                onChange={(e) => seekTo(Number(e.target.value))}
-                aria-label="Thanh thời gian biên tập"
-                className="studio-range absolute inset-0 w-full h-full opacity-0 z-10"
-              />
-              <div
-                style={{ left: `${progressPct}%` }}
-                className="absolute top-0 bottom-0 w-0.5 bg-sky-600 z-20 pointer-events-none"
-              />
-
-              {sortedInteractions.map((item) => {
-                const pct = duration > 0 ? Math.min(98, Math.max(2, (item.timestamp / duration) * 100)) : 0;
-                const isSel = item.id === selectedId;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onMouseDown={(e) => startTimelinePinDrag(e, item)}
-                    title={`${formatTimePrecise(item.timestamp)} · ${item.title} (Kéo ngang để đổi giây)`}
-                    style={{ left: `${pct}%` }}
-                    className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 z-30 w-4 h-4 rotate-45 border-2 border-white shadow transition-transform hover:scale-125 cursor-grab active:cursor-grabbing ${
-                      isSel ? 'bg-amber-500 scale-125 ring-2 ring-amber-300' : 'bg-sky-600'
-                    }`}
-                  />
-                );
-              })}
-            </div>
-          </div>
+          <StudioTimeline
+            duration={duration}
+            currentTime={currentTime}
+            isPlaying={isPlaying}
+            interactions={sortedInteractions}
+            selectedId={selectedId}
+            thumbnailSource={course.videoSourceType === 'upload' || course.videoSourceType === 'url' ? resolvedVideoSrc : ''}
+            onTogglePlay={togglePlay}
+            onSeek={(sec) => seekTo(sec)}
+            onSelect={(id) => {
+              setSelectedId(id);
+              setInspectorTab('interaction');
+            }}
+            onDragStart={() => {
+              setPast((prev) => [...prev.slice(-24), courseRef.current]);
+              setFuture([]);
+            }}
+            onDragCommit={(id, sec) => {
+              commitCourseEdit(
+                {
+                  ...courseRef.current,
+                  interactions: courseRef.current.interactions.map((x) =>
+                    x.id === id ? { ...x, timestamp: clampTime(sec) } : x
+                  ),
+                  updatedAt: new Date().toISOString().slice(0, 10),
+                },
+                false
+              );
+              seekTo(sec);
+            }}
+            onSetSelectedAtPlayhead={setSelectedAtPlayhead}
+            onNudgeSelected={nudgeSelected}
+          />
 
           {/* Timestamp collision notice */}
           {collisionPairs.length > 0 && (
@@ -990,20 +1016,17 @@ export const AuthoringStudio: React.FC<AuthoringStudioProps> = ({
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">
-                      Thời điểm (giây)
+                      Thời điểm (phút:giây)
                     </label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={duration}
-                      step={0.5}
+                    <TimeInput
+                      key={selectedItem.id}
                       value={selectedItem.timestamp}
-                      onChange={(e) => {
-                        const val = Math.max(0, Math.min(duration, Number(e.target.value)));
+                      max={duration}
+                      onCommit={(val) => {
                         updateSelectedItem({ timestamp: val });
                         seekTo(val);
                       }}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-mono tabular-nums text-slate-900"
+                      onUseCurrent={setSelectedAtPlayhead}
                     />
                   </div>
                 </div>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AuthoringStudio } from './components/AuthoringStudio';
 import { CourseLibraryView } from './components/CourseLibraryView';
-import { InteractiveVideoPlayer } from './components/InteractiveVideoPlayer';
+import { ExportedPlayerFrame } from './components/ExportedPlayerFrame';
 import { LmsSimulatorPanel } from './components/LmsSimulatorPanel';
 import { ScormExportModal } from './components/ScormExportModal';
 import { CourseProject } from './types/course';
@@ -98,7 +98,7 @@ export default function App() {
                   : 'bg-slate-300 cursor-not-allowed'
               }`}
             >
-              Xuất SCORM / PPTX
+              Xuất SCORM / xAPI / HTML5
             </button>
           </div>
         </div>
@@ -185,7 +185,11 @@ export default function App() {
 
         {view === 'play' && activeCourse && (
           <div className="max-w-5xl mx-auto">
-            <InteractiveVideoPlayer course={activeCourse} />
+            <ExportedPlayerFrame course={activeCourse} />
+            <p className="mt-3 text-xs text-slate-500">
+              Đây chính là trình phát trong gói xuất SCORM / xAPI / HTML5 — learner trên eLearning sẽ thấy y như vậy. Thử
+              nút <strong>Toàn màn hình</strong> và <strong>Aa</strong> (cỡ chữ) ở thanh điều khiển.
+            </p>
           </div>
         )}
 

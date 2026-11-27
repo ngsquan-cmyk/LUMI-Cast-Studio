@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Download, Edit3, FolderInput, Play, Plus, Trash2, Upload } from 'lucide-react';
 import { CourseProject } from '../types/course';
-import { extractYouTubeId, formatTime, saveVideoBlob } from '../utils/storage';
+import { extractYouTubeId, formatTime, looksLikeYouTubeUrl, saveVideoBlob } from '../utils/storage';
 
 interface CourseLibraryViewProps {
   courses: CourseProject[];
@@ -30,9 +30,13 @@ export const CourseLibraryView: React.FC<CourseLibraryViewProps> = ({
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
+  const badYouTubeLink =
+    Boolean(newVideoUrl.trim()) && looksLikeYouTubeUrl(newVideoUrl) && !extractYouTubeId(newVideoUrl);
+
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
+    if (badYouTubeLink && !uploadedFile) return;
     setIsCreating(true);
 
     const id = `course-${Date.now()}`;
@@ -260,12 +264,24 @@ export const CourseLibraryView: React.FC<CourseLibraryViewProps> = ({
                 Hoặc dán Video URL (tùy chọn)
               </label>
               <input
-                type="url"
+                type="text"
+                inputMode="url"
                 placeholder="https://www.youtube.com/watch?v=... hoặc link .mp4 (có thể thêm sau)"
                 value={newVideoUrl}
                 onChange={(e) => setNewVideoUrl(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-900"
+                className={`w-full px-3 py-2 rounded-lg border text-sm text-slate-900 ${
+                  badYouTubeLink ? 'border-rose-400 bg-rose-50' : 'border-slate-200'
+                }`}
               />
+              {newVideoUrl.trim() && !uploadedFile && (
+                <p className={`mt-1 text-xs ${badYouTubeLink ? 'text-rose-600' : 'text-slate-500'}`}>
+                  {badYouTubeLink
+                    ? 'Link YouTube này không chứa mã video. Mở đúng video → Chia sẻ → Sao chép link (youtu.be/... hoặc youtube.com/watch?v=...).'
+                    : extractYouTubeId(newVideoUrl)
+                    ? `Đã nhận diện video YouTube (ID: ${extractYouTubeId(newVideoUrl)})`
+                    : 'Sẽ dùng như link file video MP4 trực tiếp.'}
+                </p>
+              )}
             </div>
           </div>
 

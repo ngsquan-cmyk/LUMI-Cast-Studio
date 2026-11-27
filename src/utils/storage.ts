@@ -61,18 +61,62 @@ export function parseSubtitleFile(content: string): SubtitleCue[] {
   return cues;
 }
 
+const YT_ID_RE = /^[a-zA-Z0-9_-]{11}$/;
+
+/**
+ * Đọc mã video (11 ký tự) từ mọi dạng link YouTube thường gặp:
+ * watch?v=..., watch?app=desktop&v=..., youtu.be/..., /shorts/, /live/, /embed/, /v/,
+ * m.youtube.com, music.youtube.com, youtube-nocookie.com, hoặc chỉ dán mã 11 ký tự.
+ */
 export function extractYouTubeId(url: string): string | null {
   if (!url) return null;
   const trimmed = url.trim();
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
-    /^([a-zA-Z0-9_-]{11})$/,
-  ];
-  for (const re of patterns) {
-    const match = trimmed.match(re);
-    if (match && match[1]) return match[1];
+  if (YT_ID_RE.test(trimmed)) return trimmed;
+
+  let parsed: URL | null = null;
+  try {
+    parsed = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+  } catch {
+    parsed = null;
   }
-  return null;
+  if (parsed) {
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    if (host === 'youtu.be') {
+      const id = segments[0] || '';
+      return YT_ID_RE.test(id) ? id : null;
+    }
+    if (host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
+      const v = parsed.searchParams.get('v');
+      if (v && YT_ID_RE.test(v)) return v;
+      const idx = segments.findIndex((seg) => ['embed', 'shorts', 'live', 'v', 'e'].includes(seg));
+      if (idx >= 0 && segments[idx + 1] && YT_ID_RE.test(segments[idx + 1])) return segments[idx + 1];
+      return null;
+    }
+    // Link của trang web khác (ví dụ máy chủ MP4 nội bộ) -> không phải YouTube
+    return null;
+  }
+  // Dự phòng cho chuỗi lẫn ký tự lạ (không đọc được dạng URL chuẩn)
+  const m = trimmed.match(/(?:[?&]v=|youtu\.be\/|\/(?:embed|shorts|live|v)\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+/** Link có phải của YouTube không (kể cả khi không đọc được mã video). */
+export function looksLikeYouTubeUrl(url: string): boolean {
+  return /(^|\/\/|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)(\/|$|\?)/i.test((url || '').trim());
+}
+
+/**
+ * Sửa khóa học đã lỡ lưu link YouTube như link MP4 (do bản cũ không nhận ra một số dạng link).
+ */
+export function normalizeCourseVideoSource(course: CourseProject): CourseProject {
+  if (course.videoSourceType === 'url' && course.videoUrl) {
+    const id = extractYouTubeId(course.videoUrl);
+    if (id && looksLikeYouTubeUrl(course.videoUrl)) {
+      return { ...course, videoSourceType: 'youtube', youtubeId: id };
+    }
+  }
+  return course;
 }
 
 export function formatTime(seconds: number): string {
@@ -84,9 +128,10 @@ export function formatTime(seconds: number): string {
 
 export function formatTimePrecise(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '00:00.0';
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  const tenths = Math.floor((seconds % 1) * 10);
+  const totalTenths = Math.round(seconds * 10);
+  const mins = Math.floor(totalTenths / 600);
+  const secs = Math.floor((totalTenths % 600) / 10);
+  const tenths = totalTenths % 10;
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${tenths}`;
 }
 
@@ -239,10 +284,10 @@ export function loadStoredCourses(fallback: CourseProject[] = []): CourseProject
       const cleaned = parsed.filter((c) => !isDemoCourseId(c.id));
       localStorage.setItem(CLEAN_PROD_FLAG, '1');
       localStorage.setItem(COURSES_STORAGE_KEY, JSON.stringify(cleaned));
-      return cleaned;
+      return cleaned.map(normalizeCourseVideoSource);
     }
 
-    return parsed;
+    return parsed.map(normalizeCourseVideoSource);
   } catch {
     return fallback;
   }
